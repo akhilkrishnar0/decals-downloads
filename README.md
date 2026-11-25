@@ -38,9 +38,11 @@ The `&invvar` cutout contains a science cube and an inverse-variance cube, ident
 
 ![UGC9024 DECaLS diagnostic plot](figures/UGC9024.png)
 
-## Why use brick-depth maps?
+## Inverse-variance maps and the brick-depth alternative
 
-In some cases, the inverse-variance maps downloaded from DECaLS do not match the dimensions or spatial coverage of the corresponding science images because the requested cutout can extend across multiple survey bricks. This prevents a direct pixel-by-pixel estimation of photometric uncertainties. To address this, we retrieve the DR9 brick-level depth maps covering the entire science image. The Legacy Surveys divide the sky into bricks of approximately 0.25° × 0.25°, each containing coadded science images, inverse-variance maps, PSF information and depth maps. The depth map represents the spatially varying inverse variance of the PSF-fitted point-source flux, accounting for variations in observational coverage, background noise and image quality. By sampling the relevant brick-depth maps onto the science image's WCS, we obtain spatially consistent sensitivity maps in the g, r and z bands. The corresponding point-source flux uncertainty is given by $\sigma_{\rm PSF}=1/\sqrt{\mathrm{depth}}$, in nanomaggies. However, these depth maps are not equivalent to pixel-level inverse-variance maps, and additional assumptions are required to estimate uncertainties for extended emission or aperture-based photometry.
+When using the `&subimage` option, inverse-variance maps are retrieved from individual survey bricks and may show block-like structures. The NGC1566 diagnostic below illustrates the earlier subimage-based output. Instead, use the `&invvar` option with `pixscale=0.262` to obtain inverse-variance cutouts on the same spatial grid as the science images. This is the default in the current package.
+
+Alternatively, the package provides an optional DR9 brick-depth workflow to download depth maps and generate corresponding diagnostic plots. The Legacy Surveys divide the sky into bricks of approximately 0.25° × 0.25°, with coadded images, inverse-variance maps, PSF information and depth products. The depth map represents the spatially varying inverse variance of PSF-fitted point-source flux, reflecting observational coverage, background noise and image quality. The relevant depth maps are sampled onto the science image WCS in g, r and z. The corresponding point-source flux uncertainty is $\sigma_{\rm PSF}=1/\sqrt{\mathrm{depth}}$, in nanomaggies. Depth maps are not equivalent to pixel-level inverse-variance maps; additional assumptions are required for extended-source or aperture photometry.
 
 **References**
 
@@ -51,13 +53,13 @@ In some cases, the inverse-variance maps downloaded from DECaLS do not match the
 
 The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is now the default for obtaining matching pixel-level inverse-variance maps. The optional DR9 depth workflow remains separate.
 
-## Example output — NGC1566
+## Example output — NGC1566 (earlier subimage-based diagnostic)
 
 ![NGC1566 DECaLS diagnostic plot](figures/NGC1566.png)
 
 ## Optional: DR9 brick depth — NGC1566
 
-If native inverse-variance maps have a different footprint, download DR9
+To obtain complementary point-source sensitivity maps, download DR9
 PSF-depth bricks and sample them on the science image grid:
 
 ```python

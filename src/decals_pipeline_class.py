@@ -7,6 +7,10 @@ from astropy.wcs import WCS
 from astroquery.simbad import Simbad
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+import warnings
+from astropy.wcs import FITSFixedWarning
+
+warnings.filterwarnings("ignore", message=".*cdfix.*",  category=FITSFixedWarning)
 from decals_query import DECaLSQuery
 class DecalsPipeline:
     def __init__(self, base_dir="decals_data", layer="ls-dr9", galaxy_centers=None):

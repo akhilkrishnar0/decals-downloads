@@ -34,7 +34,7 @@ Coordinates are ICRS decimal degrees (RA: 0–360, Dec: −90–90). Verify the 
 Four rows show g/r/z science images, native inverse variance, sigma (1/sqrt(invvar)), and PSFs. Each map uses its own WCS. Native inverse variance can cover a different sky region; it is not an aligned uncertainty map. The full plot requires a single-brick seven-HDU inverse-variance product. For other layouts, use `do_plot=False` and inspect the native products separately.
 
 ```python
-pipe.run(['NGC6902'], size=3000, do_plot=False, include_invvar=False)
+pipe.run(['NGC6902'], size=100, do_plot=False, include_invvar=False)
 ```
 
 Set `include_invvar=True` only to export inverse variance after strict image-grid checks. Invalid weights become NaN in sigma plots.

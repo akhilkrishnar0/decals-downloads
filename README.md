@@ -33,6 +33,19 @@ Native inverse-variance maps use the original HDU 2/4/6 selection and may have a
 
 ![UGC9024 DECaLS diagnostic plot](UGC9024(1).png)
 
+## Why use brick-depth maps?
+
+In some cases, the inverse-variance maps downloaded from DECaLS do not match the dimensions or spatial coverage of the corresponding science images because the requested cutout can extend across multiple survey bricks. This prevents a direct pixel-by-pixel estimation of photometric uncertainties. To address this, we retrieve the DR9 brick-level depth maps covering the entire science image. The Legacy Surveys divide the sky into bricks of approximately 0.25° × 0.25°, each containing coadded science images, inverse-variance maps, PSF information and depth maps. The depth map represents the spatially varying inverse variance of the PSF-fitted point-source flux, accounting for variations in observational coverage, background noise and image quality. By sampling the relevant brick-depth maps onto the science image's WCS, we obtain spatially consistent sensitivity maps in the g, r and z bands. The corresponding point-source flux uncertainty is given by $\sigma_{\rm PSF}=1/\sqrt{\mathrm{depth}}$, in nanomaggies. However, these depth maps are not equivalent to pixel-level inverse-variance maps, and additional assumptions are required to estimate uncertainties for extended emission or aperture-based photometry.
+
+**References**
+
+- [Legacy Surveys DR9 — Data Release Description](https://www.legacysurvey.org/dr9/description/)
+- [Legacy Surveys DR9 — Data Products and Depth Map Definitions](https://www.legacysurvey.org/dr9/files/)
+- [DR9 Brick Data Repository — NERSC](https://portal.nersc.gov/cfs/cosmo/data/legacysurvey/dr9/)
+- [Discussion on Bricks, Inverse-Variance Maps and Cutout Shapes](https://discuss.legacysurvey.org/t/question-about-bricks-inverse-variance-maps-and-cutout-shapes/10502)
+
+The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is worth investigating as a direct solution for obtaining matching pixel-level inverse-variance maps.
+
 ## Optional: DR9 brick depth — NGC1566
 
 If native inverse-variance maps have a different footprint, download DR9

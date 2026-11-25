@@ -2,6 +2,10 @@
 
 Download and split Legacy Surveys g/r/z science images, native inverse-variance maps and PSFs.
 
+Data acquisition and diagnostic visualisation only.
+
+[Installation](#installation) · [Image download](#example-ugc9024) · [Brick depth](#optional-dr9-brick-depth--ngc1566)
+
 ## Installation
 
 ```bash
@@ -29,9 +33,10 @@ Coordinates are supplied by the user. If omitted, SIMBAD is queried; on failure,
 Set `do_plot=True` for the 12-panel diagnostic. Outputs are saved in `decals_data/`.
 
 Native inverse-variance maps use the original HDU 2/4/6 selection and may have a different WCS and footprint from the science images. Verify HDU band and brick identity before scientific use; these are not aligned uncertainty maps.
+
 ## Example output — UGC9024
 
-![UGC9024 DECaLS diagnostic plot](UGC9024(1).png)
+![UGC9024 DECaLS diagnostic plot](figures/UGC9024.png)
 
 ## Why use brick-depth maps?
 
@@ -45,9 +50,10 @@ In some cases, the inverse-variance maps downloaded from DECaLS do not match the
 - [Discussion on Bricks, Inverse-Variance Maps and Cutout Shapes](https://discuss.legacysurvey.org/t/question-about-bricks-inverse-variance-maps-and-cutout-shapes/10502)
 
 The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is worth investigating as a direct solution for obtaining matching pixel-level inverse-variance maps.
+
 ## Example output — NGC1566
 
-![NGC1566 DECaLS diagnostic plot](NGC1566.png)
+![NGC1566 DECaLS diagnostic plot](figures/NGC1566.png)
 
 ## Optional: DR9 brick depth — NGC1566
 
@@ -85,4 +91,14 @@ explicitly; NGC1566 uses south.
 inverse variance. Sigma = 1/sqrt(depth), in nanomaggies. No aperture-noise
 conversion or variance resampling is performed. Original inverse-variance
 files are unchanged.
-![NGC1566 DECaLS diagnostic plot](NGC1566_depth.png)
+### Example depth output — NGC1566
+
+![NGC1566 DR9 brick-depth diagnostic plot](figures/NGC1566_depth.png)
+
+## Repository structure
+
+```text
+src/        Python modules
+examples/   Runnable download and brick-depth examples
+figures/    Example diagnostic plots
+```

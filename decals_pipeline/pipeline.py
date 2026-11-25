@@ -26,15 +26,39 @@ class DecalsPipeline:
         return g.replace(" ", "")
 
     # ---------- COORD ----------
-    def get_coord(self, target):
-        result = Simbad.query_object(target)
-        if result is None or len(result) == 0:
-            raise ValueError(f"{target} not found in SIMBAD")
+    @staticmethod
+    def _degree_coord(ra, dec):
+        ra, dec = float(ra), float(dec)
+        if not (np.isfinite(ra) and np.isfinite(dec) and 0 <= ra < 360 and -90 <= dec <= 90):
+            raise ValueError("Use decimal degrees: 0 <= RA < 360 and -90 <= Dec <= 90.")
+        return SkyCoord(ra, dec, unit=u.deg, frame="icrs")
 
-        if 'ra' in result.colnames and 'dec' in result.colnames:
-            return SkyCoord(result['ra'][0], result['dec'][0], unit=u.deg)
-        return SkyCoord(result['RA'][0] + " " + result['DEC'][0],
-                        unit=(u.hourangle, u.deg))
+    def get_coord(self, target, ra=None, dec=None):
+        if ra is not None or dec is not None:
+            if ra is None or dec is None:
+                raise ValueError("Supply both ra and dec in decimal degrees.")
+            return self._degree_coord(ra, dec)
+        try:
+            result = Simbad.query_object(target)
+            if result is None or len(result) == 0:
+                raise ValueError(f"{target} not found in SIMBAD")
+            if 'ra' in result.colnames and 'dec' in result.colnames:
+                return self._degree_coord(result['ra'][0], result['dec'][0])
+            return SkyCoord(result['RA'][0] + " " + result['DEC'][0],
+                            unit=(u.hourangle, u.deg), frame="icrs")
+        except Exception as exc:
+            print(f"SIMBAD lookup failed for {target}: {exc}")
+            print("Enter ICRS coordinates manually in decimal degrees.")
+            while True:
+                try:
+                    ra = input(f"{target} RA (deg): ")
+                    dec = input(f"{target} Dec (deg): ")
+                except EOFError as err:
+                    raise RuntimeError("No interactive input available. Pass ra= and dec= to run().") from err
+                try:
+                    return self._degree_coord(ra, dec)
+                except ValueError as err:
+                    print(f"Invalid coordinates: {err}")
 
     # ---------- CHECK ----------
     def already_downloaded(self, target):
@@ -43,11 +67,11 @@ class DecalsPipeline:
         return f.exists()
 
     # ---------- DOWNLOAD ----------
-    def download(self, target, size=1200, overwrite=True):
+    def download(self, target, size=1200, overwrite=True, ra=None, dec=None):
         from .query import DECaLSQuery
         g = self.clean_name(target)
 
-        coord = self.get_coord(target)
+        coord = self.get_coord(target) if ra is None and dec is None else self.get_coord(target, ra=ra, dec=dec)
         query = DECaLSQuery(output_dir=str(self.download_dir), layer=self.layer, overwrite=overwrite)
 
         print(f"⬇ Downloading {g}")
@@ -256,10 +280,16 @@ class DecalsPipeline:
             force_download=False,
             do_plot=True,
             do_psf_split=True,
-            do_save_split=True, include_invvar=False):
+            do_save_split=True, include_invvar=False, ra=None, dec=None):
 
         if isinstance(targets, str):
             targets = [targets]
+
+        targets = list(targets)
+        if ra is not None or dec is not None:
+            if len(targets) != 1 or ra is None or dec is None:
+                raise ValueError('Explicit ra and dec require exactly one target and both coordinates.')
+            self._degree_coord(ra, dec)
 
         for t in targets:
             print(f"\n=== {t} ===")
@@ -267,13 +297,13 @@ class DecalsPipeline:
             # DOWNLOAD CONTROL (fixed)
             if force_download:
                 print(f"🔁 Force downloading {t}")
-                self.download(t, size=size)
+                self.download(t, size=size, ra=ra, dec=dec)
 
             elif skip_download and self.already_downloaded(t):
-                self.download(t, size=size, overwrite=False)
+                self.download(t, size=size, overwrite=False, ra=ra, dec=dec)
 
             else:
-                self.download(t, size=size, overwrite=not skip_download)
+                self.download(t, size=size, overwrite=not skip_download, ra=ra, dec=dec)
 
             if do_plot:
                 self.plot(t)

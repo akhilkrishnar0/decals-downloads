@@ -232,13 +232,27 @@ class DecalsPipeline:
 
     
 
+    def depth_maps(self, target, region="south"):
+        """Get DR9 PSF depth and PSF flux sigma on the downloaded science grid."""
+        if self.layer not in ("ls-dr9", "ls-dr9-south", "ls-dr9-north"):
+            raise ValueError("Brick depth option supports DR9 only")
+        if self.layer.endswith("-north") and region != "north" or self.layer.endswith("-south") and region != "south":
+            raise ValueError("Depth region must match the science layer")
+        from decals_depth import make_depth_maps
+        g = self.clean_name(target)
+        return make_depth_maps(
+            self.download_dir / "fits" / f"{g}.fits",
+            self.base_dir / "brick_maps",
+            self.base_dir / "outputs" / "depth" / g,
+            self.plot_dir / f"{g}_depth.png", region=region)
+
     # ---------- RUN ----------
     def run(self, targets, size=1200,
             skip_download=True,
             force_download=False,
             do_plot=True,
             do_psf_split=True,
-            do_save_split=True):
+            do_save_split=True, do_depth=False, depth_region='south'):
 
         if isinstance(targets, str):
             targets = [targets]
@@ -276,3 +290,6 @@ class DecalsPipeline:
                     self.split_psf(t)
                 except Exception as e:
                     print(f"❌ PSF split failed: {e}")
+
+            if do_depth:
+                self.depth_maps(t, region=depth_region)

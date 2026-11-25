@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decals-download"
-version = "0.4.0"
+version = "0.4.1"
 description = "DECaLS image, inverse variance and PSF downloads"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy", "astropy", "astroquery", "matplotlib", "requests"]
 
 [tool.setuptools]
-py-modules = ["decals_pipeline_class", "decals_query"]
+py-modules = ["decals_pipeline_class", "decals_query", "decals_depth"]

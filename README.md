@@ -45,6 +45,9 @@ In some cases, the inverse-variance maps downloaded from DECaLS do not match the
 - [Discussion on Bricks, Inverse-Variance Maps and Cutout Shapes](https://discuss.legacysurvey.org/t/question-about-bricks-inverse-variance-maps-and-cutout-shapes/10502)
 
 The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is worth investigating as a direct solution for obtaining matching pixel-level inverse-variance maps.
+## Example output — NGC1566
+
+![NGC1566 DECaLS diagnostic plot](NGC1566.png)
 
 ## Optional: DR9 brick depth — NGC1566
 
@@ -82,3 +85,4 @@ explicitly; NGC1566 uses south.
 inverse variance. Sigma = 1/sqrt(depth), in nanomaggies. No aperture-noise
 conversion or variance resampling is performed. Original inverse-variance
 files are unchanged.
+![NGC1566 DECaLS diagnostic plot](NGC1566_depth.png)

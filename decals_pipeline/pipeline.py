@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -76,6 +77,7 @@ class DecalsPipeline:
 
         print(f"⬇ Downloading {g}")
         query.query_region(coord, size=size, download_type='all', galid=g)
+        return coord
 
     def _check_image_invvar(self, target):
         name = self.clean_name(target)
@@ -133,6 +135,56 @@ class DecalsPipeline:
         return images, invvars, sigmas, psfs, wcs
 
     # ---------- PLOT ----------
+    def review(self, target, ra, dec):
+        """Science-only g/r/z preview; independent of inverse variance and PSF."""
+        from .review import prepare_decals_review
+        coord = self._degree_coord(ra, dec)
+        g = self.clean_name(target)
+        return prepare_decals_review(self.download_dir, self.plot_dir / g, g,
+                                     coord.ra.deg, coord.dec.deg)
+
+    def plot_native_invvar(self, target):
+        """Plot explicitly identified native inverse-variance HDUs separately."""
+        g = self.clean_name(target)
+        outdir = self.plot_dir / g / "native_invvar"
+        outdir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        with fits.open(self.download_dir / "invvar" / f"{g}_invvar.fits") as hdul:
+            for idx, h in enumerate(hdul):
+                label = " ".join(str(h.header.get(k, "")) for k in
+                                 ("EXTNAME", "IMTYPE", "PRODTYPE")).lower()
+                if not any(x in label for x in ("invvar", "inverse variance", "inverse_variance")):
+                    continue
+                if h.data is None or h.data.ndim != 2:
+                    continue
+                wcs = WCS(h.header).celestial
+                if not wcs.has_celestial:
+                    continue
+                inv = h.data
+                sigma = np.full(inv.shape, np.nan)
+                good = np.isfinite(inv) & (inv > 0)
+                sigma[good] = 1 / np.sqrt(inv[good])
+                band = h.header.get("BAND", h.header.get("FILTER", "?"))
+                fig = plt.figure(figsize=(10, 5))
+                try:
+                    for j, (name, data) in enumerate((("invvar", inv), ("sigma", sigma)), 1):
+                        ax = fig.add_subplot(1, 2, j, projection=wcs)
+                        finite = data[np.isfinite(data)]
+                        lo, hi = np.percentile(finite, (1, 99)) if finite.size else (0, 1)
+                        ax.imshow(data, origin="lower", cmap="viridis", vmin=lo, vmax=hi)
+                        ax.set_title(f"HDU {idx} | {band} {name}")
+                        ax.set_xlabel("RA")
+                        ax.set_ylabel("Dec")
+                    fig.tight_layout()
+                    path = outdir / f"hdu_{idx}.png"
+                    fig.savefig(path, dpi=150)
+                    paths.append(path)
+                finally:
+                    plt.close(fig)
+        if not paths:
+            warnings.warn("No explicitly labelled native inverse-variance HDUs found; original FITS retained.", RuntimeWarning)
+        return paths
+
     def plot(self, target):
         g = self.clean_name(target)
         bands = ['g','r','z']
@@ -297,18 +349,28 @@ class DecalsPipeline:
             # DOWNLOAD CONTROL (fixed)
             if force_download:
                 print(f"🔁 Force downloading {t}")
-                self.download(t, size=size, ra=ra, dec=dec)
+                coord = self.download(t, size=size, ra=ra, dec=dec)
 
             elif skip_download and self.already_downloaded(t):
-                self.download(t, size=size, overwrite=False, ra=ra, dec=dec)
+                coord = self.download(t, size=size, overwrite=False, ra=ra, dec=dec)
 
             else:
-                self.download(t, size=size, overwrite=not skip_download, ra=ra, dec=dec)
+                coord = self.download(t, size=size, overwrite=not skip_download, ra=ra, dec=dec)
 
-            if do_plot:
-                self.plot(t)
             if do_save_split:
-                self.save_split_data(t, include_invvar=include_invvar)
+                self.save_split_data(t, include_invvar=False)
+            if do_plot:
+                self.review(t, coord.ra.deg, coord.dec.deg)
+                try:
+                    self.plot(t)
+                except (ValueError, OSError) as exc:
+                    warnings.warn(f"{t}: full diagnostic unavailable ({exc}); g/r/z preview saved.", RuntimeWarning)
+                    try:
+                        self.plot_native_invvar(t)
+                    except (ValueError, OSError) as native_exc:
+                        warnings.warn(f"{t}: native diagnostic unavailable ({native_exc}).", RuntimeWarning)
             if do_psf_split:
                 self.split_psf(t)
+            if do_save_split and include_invvar:
+                self.save_split_data(t, include_invvar=True)
 

@@ -6,10 +6,10 @@ from astroquery.query import BaseQuery
 from astropy.coordinates import SkyCoord
 
 class DECaLSQuery(BaseQuery):
-    URL_TEMPLATE_JPG = 'https://www.legacysurvey.org/viewer/cutout.jpg?ra={ra}&dec={dec}&pix=0.262&layer={layer}&size={size}'
-    URL_TEMPLATE_FITS = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={ra}&dec={dec}&pix=0.262&layer={layer}&size={size}'
-    URL_TEMPLATE_PSF = 'https://www.legacysurvey.org/viewer/coadd-psf/?ra={ra}&dec={dec}&layer={layer}'
-    URL_TEMPLATE_INVVAR = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={ra}&dec={dec}&layer={layer}&size={size}&pix=0.262&invvar'
+    URL_TEMPLATE_JPG = 'https://www.legacysurvey.org/viewer/cutout.jpg?ra={ra}&dec={dec}&pixscale=0.262&layer={layer}&size={size}&bands=grz'
+    URL_TEMPLATE_FITS = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={ra}&dec={dec}&pixscale=0.262&layer={layer}&size={size}'
+    URL_TEMPLATE_PSF = 'https://www.legacysurvey.org/viewer/coadd-psf/?ra={ra}&dec={dec}&layer={layer}&bands=grz'
+    URL_TEMPLATE_INVVAR = 'https://www.legacysurvey.org/viewer/cutout.fits?ra={ra}&dec={dec}&layer={layer}&size={size}&pixscale=0.262&bands=grz&invvar'
 
     def __init__(self, output_dir="downloads", layer="ls-dr9"):
         self.output_dir = output_dir

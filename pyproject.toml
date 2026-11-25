@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decals-download"
-version = "0.4.2"
+version = "0.4.3"
 description = "DECaLS image, inverse variance and PSF downloads"
 readme = "README.md"
 requires-python = ">=3.9"

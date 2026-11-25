@@ -76,42 +76,89 @@ class DecalsPipeline:
         print(f"⬇ Downloading {g}")
         query.query_region(coord, size=size, download_type='all', galid=g)
 
+    @staticmethod
+    def _read_bands(path, kind):
+        """Select g/r/z by FITS metadata, not HDU position."""
+        wanted = ("g", "r", "z")
+        found = {}
+        with fits.open(path, memmap=False) as hdul:
+            for hdu in hdul:
+                if hdu.data is None:
+                    continue
+                h = hdu.header
+                typ = str(h.get("IMAGETYP", h.get("EXTNAME", ""))).strip().upper()
+                if kind == "INVVAR" and typ not in ("INVVAR", "INVERSE_VARIANCE"):
+                    continue
+                if kind == "IMAGE" and typ not in ("", "IMAGE", "PRIMARY"):
+                    continue
+                data = hdu.data
+                if data.ndim == 3:
+                    labels = [str(h.get(f"BAND{i}", "")).strip().lower()
+                              for i in range(data.shape[0])]
+                    if not all(labels):
+                        labels = list(str(h.get("BANDS", "")).strip().lower())
+                    if len(labels) != data.shape[0]:
+                        raise ValueError(f"{path}: cannot determine cube band order")
+                    pairs = zip(labels, data)
+                elif data.ndim == 2:
+                    band = str(h.get("BAND", h.get("FILTER", ""))).strip().lower()
+                    pairs = [(band, data)]
+                else:
+                    continue
+                for band, plane in pairs:
+                    if band not in wanted:
+                        continue
+                    if band in found:
+                        raise ValueError(f"{path}: multiple {kind} planes for {band}; "
+                                         "redownload using the aligned cutout endpoint")
+                    found[band] = (plane.copy(), h.copy())
+        missing = set(wanted) - set(found)
+        if missing:
+            raise ValueError(f"{path}: missing {kind} bands {sorted(missing)}; "
+                             "inspect FITS headers or redownload with force_download=True")
+        return [found[b] for b in wanted]
+
+    @staticmethod
+    def _check_grid(images, invvars):
+        """Reject mismatched shapes or sky grids; never resample silently."""
+        for band, (image, ih), (inv, vh) in zip("grz", images, invvars):
+            if image.shape != inv.shape:
+                raise ValueError(f"{band}: science {image.shape} vs invvar {inv.shape}; redownload both")
+            ny, nx = image.shape
+            xx = np.array([0, nx-1, 0, nx-1, (nx-1)/2])
+            yy = np.array([0, 0, ny-1, ny-1, (ny-1)/2])
+            iw, vw = WCS(ih).celestial, WCS(vh).celestial
+            a, d = iw.pixel_to_world_values(xx, yy)
+            x, y = vw.world_to_pixel_values(a, d)
+            if not (np.allclose(x, xx, atol=1e-3, rtol=0) and
+                    np.allclose(y, yy, atol=1e-3, rtol=0)):
+                raise ValueError(f"{band}: science and invvar WCS differ; redownload both")
+
+    @staticmethod
+    def _split_header(header, band):
+        h = WCS(header).celestial.to_header()
+        for key in ("BUNIT", "TELESCOP", "INSTRUME", "SURVEY", "VERSION",
+                    "MAGZERO", "IMAGETYP"):
+            if key in header:
+                h[key] = header[key]
+        h["BAND"] = band
+        return h
+
     # ---------- LOAD ----------
     def load_data(self, target):
         g = self.clean_name(target)
-
-        fits_file   = self.download_dir / "fits" / f"{g}.fits"
-        invvar_file = self.download_dir / "invvar" / f"{g}_invvar.fits"
-        psf_file    = self.download_dir / "psf" / f"{g}_psf.fits"
-
-        if not fits_file.exists():
-            raise FileNotFoundError(f"{fits_file} not found")
-
-        with fits.open(fits_file) as hdul:
-            img = hdul[0].data
-            images = [img[i, :, :].copy() for i in range(3)]
-            wcs = WCS(hdul[0].header).celestial
-        with fits.open(invvar_file) as hdul:
-            invvars = [hdul[i].data.copy() for i in (2, 4, 6)]
-        with fits.open(psf_file) as hdul:
-            planes = [h.data.copy() for h in hdul if h.data is not None and h.data.ndim == 2]
-            if len(planes) == 3:
-                psfs = planes
-            else:
-                cube = hdul[0].data
-                if cube is not None and cube.ndim == 3 and cube.shape[-1] == 3 and cube.shape[0] != 3:
-                    psfs = [cube[:, :, i].copy() for i in range(3)]
-                elif cube is not None and cube.ndim == 3 and cube.shape[0] == 3 and cube.shape[-1] != 3:
-                    psfs = [cube[i].copy() for i in range(3)]
-                else:
-                    raise ValueError("Unrecognized PSF layout")
+        images = self._read_bands(self.download_dir / "fits" / f"{g}.fits", "IMAGE")
+        invvars = self._read_bands(self.download_dir / "invvar" / f"{g}_invvar.fits", "INVVAR")
+        self._check_grid(images, invvars)
+        psfs = self._read_bands(self.download_dir / "psf" / f"{g}_psf.fits", "PSF")
         sigmas = []
-        for inv in invvars:
+        for inv, _ in invvars:
             s = np.full(inv.shape, np.nan, dtype=float)
             m = np.isfinite(inv) & (inv > 0)
             s[m] = 1.0 / np.sqrt(inv[m])
             sigmas.append(s)
-        return images, invvars, sigmas, psfs, wcs
+        wcs = WCS(images[0][1]).celestial
+        return [x[0] for x in images], [x[0] for x in invvars], sigmas, [x[0] for x in psfs], wcs
 
     # ---------- PLOT ----------
     def plot(self, target):
@@ -120,8 +167,7 @@ class DecalsPipeline:
 
         images, invvars, sigmas, psfs, wcs = self.load_data(target)
 
-        with fits.open(self.download_dir / "invvar" / f"{g}_invvar.fits") as hdul:
-            invwcs = [WCS(hdul[i].header).celestial for i in (2, 4, 6)]
+        invwcs = [wcs] * 3  # grids validated by load_data
         fig = plt.figure(figsize=(12,16))
 
         for row in range(4):
@@ -132,19 +178,19 @@ class DecalsPipeline:
                 if row == 0:
                     data = images[col]
                     vmin,vmax = np.percentile(data[np.isfinite(data)],[21,97]) if np.isfinite(data).any() else (0, 1)
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
+                    ax.imshow(data, origin='lower', vmin=vmin, vmax=vmax)
                     ax.set_title(f"{bands[col]} image")
 
                 elif row == 1:
                     data = invvars[col]
                     vmin,vmax = np.percentile(data[np.isfinite(data)],[1,99]) if np.isfinite(data).any() else (0, 1)
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
+                    ax.imshow(data, origin='lower', vmin=vmin, vmax=vmax)
                     ax.set_title(f"{bands[col]} invvar")
 
                 elif row == 2:
                     data = sigmas[col]
                     vmin,vmax = np.percentile(data[np.isfinite(data)],[1,99]) if np.isfinite(data).any() else (0, 1)
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
+                    ax.imshow(data, origin='lower', vmin=vmin, vmax=vmax)
                     ax.set_title(f"{bands[col]} sigma")
 
                 else:
@@ -167,70 +213,30 @@ class DecalsPipeline:
     # ---------- PSF SPLIT ----------
     def split_psf(self, target):
         g = self.clean_name(target)
-        bands = ["g","r","z"]
-
-        psf_file = self.download_dir / "psf" / f"{g}_psf.fits"
-
-        with fits.open(psf_file) as hdul:
-            for i, band in enumerate(bands):
-                data = hdul[i].data
-                header = hdul[i].header
-
-                out = self.download_dir / "psf" / f"{g}_PSF_{band}.fits"
-
-                h = header.copy()
-                h["BAND"] = band
-
-                fits.writeto(out, data, header=h, overwrite=True)
-
-        print(f"✔ Split PSF for {g}")
+        folder = self.download_dir / "psf"
+        planes = self._read_bands(folder / f"{g}_psf.fits", "PSF")
+        for band, (data, header) in zip("grz", planes):
+            h = header.copy()
+            h["BAND"] = band
+            fits.writeto(folder / f"{g}_PSF_{band}.fits", data, header=h, overwrite=True)
+        print(f"Saved split PSF for {g}")
 
     def save_split_data(self, target):
         g = self.clean_name(target)
-        bands = ["g","r","z"]
-    
-        # create output dirs
         out_img = self.base_dir / "outputs" / "images"
         out_inv = self.base_dir / "outputs" / "invvar"
         out_img.mkdir(parents=True, exist_ok=True)
         out_inv.mkdir(parents=True, exist_ok=True)
-    
-        fits_file   = self.download_dir / "fits" / f"{g}.fits"
-        invvar_file = self.download_dir / "invvar" / f"{g}_invvar.fits"
-    
-        # ---------- IMAGE ----------
-        with fits.open(fits_file) as hdul:
-            img = hdul[0].data
-            header = hdul[0].header
-    
-            for i, band in enumerate(bands):
-                data = img[i,:,:]
-    
-                h = WCS(header).celestial.to_header()
-                for key in ('BUNIT', 'TELESCOP', 'INSTRUME', 'SURVEY', 'MAGZERO'):
-                    if key in header:
-                        h[key] = header[key]
-                h["BAND"] = band
-    
-                out = out_img / f"{g}_{band}.fits"
-                fits.writeto(out, data, header=h, overwrite=True)
-    
-        # ---------- INVVAR ----------
-        with fits.open(invvar_file) as hdul:
-            invs = [hdul[2].data, hdul[4].data, hdul[6].data]
-    
-            for i, band in enumerate(bands):
-                data = invs[i]
-    
-                h = hdul[(2, 4, 6)[i]].header.copy()
-                h["BAND"] = band
-    
-                out = out_inv / f"{g}_{band}_invvar.fits"
-                fits.writeto(out, data, header=h, overwrite=True)
-    
-        print(f"✔ Saved split IMAGE + INVVAR for {g}")
-
-    
+        images = self._read_bands(self.download_dir / "fits" / f"{g}.fits", "IMAGE")
+        for band, (data, header) in zip("grz", images):
+            fits.writeto(out_img / f"{g}_{band}.fits", data,
+                         self._split_header(header, band), overwrite=True)
+        invvars = self._read_bands(self.download_dir / "invvar" / f"{g}_invvar.fits", "INVVAR")
+        self._check_grid(images, invvars)
+        for band, (data, header) in zip("grz", invvars):
+            fits.writeto(out_inv / f"{g}_{band}_invvar.fits", data,
+                         self._split_header(header, band), overwrite=True)
+        print(f"Saved split IMAGE + INVVAR for {g}")
 
     def depth_maps(self, target, region="south"):
         """Get DR9 PSF depth and PSF flux sigma on the downloaded science grid."""

@@ -1,6 +1,6 @@
 # DECaLS Downloads
 
-Download and split Legacy Surveys g/r/z science images, native inverse-variance maps and PSFs.
+Download and split Legacy Surveys g/r/z science images, aligned inverse-variance cutouts and PSFs.
 
 Data acquisition and diagnostic visualisation only.
 
@@ -32,7 +32,7 @@ Coordinates are supplied by the user. If omitted, SIMBAD is queried; on failure,
 
 Set `do_plot=True` for the 12-panel diagnostic. Outputs are saved in `decals_data/`.
 
-Native inverse-variance maps use the original HDU 2/4/6 selection and may have a different WCS and footprint from the science images. Verify HDU band and brick identity before scientific use; these are not aligned uncertainty maps.
+The `&invvar` cutout contains a science cube and an inverse-variance cube, identified by `IMAGETYP`. The pipeline selects g/r/z using `BAND0`, `BAND1`, etc., or `BANDS`, and checks image shape and WCS before splitting. Requests explicitly specify `bands=grz` and `pixscale=0.262` (including DR11, which may also provide i). For old cached `&subimage` files or a changed release, use `force_download=True` once; then reuse the new downloads.
 
 ## Example output — UGC9024
 
@@ -49,7 +49,7 @@ In some cases, the inverse-variance maps downloaded from DECaLS do not match the
 - [DR9 Brick Data Repository — NERSC](https://portal.nersc.gov/cfs/cosmo/data/legacysurvey/dr9/)
 - [Discussion on Bricks, Inverse-Variance Maps and Cutout Shapes](https://discuss.legacysurvey.org/t/question-about-bricks-inverse-variance-maps-and-cutout-shapes/10502)
 
-The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is worth investigating as a direct solution for obtaining matching pixel-level inverse-variance maps.
+The last reference also discusses the `&invvar` cutout option at the native pixel scale of 0.262 arcsec/pixel, which is now the default for obtaining matching pixel-level inverse-variance maps. The optional DR9 depth workflow remains separate.
 
 ## Example output — NGC1566
 

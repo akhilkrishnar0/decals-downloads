@@ -2,8 +2,8 @@
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 [project]
-name = "glsb-decals-pipeline"
-version = "0.2.0"
+name = "decals-download"
+version = "0.3.0"
 description = "Prepare DECaLS image and inverse-variance products for GLSB analysis"
 requires-python = ">=3.9"
 dependencies = ["numpy", "astropy", "astroquery", "matplotlib", "requests"]

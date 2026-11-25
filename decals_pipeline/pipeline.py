@@ -43,12 +43,12 @@ class DecalsPipeline:
         return f.exists()
 
     # ---------- DOWNLOAD ----------
-    def download(self, target, size=1200):
+    def download(self, target, size=1200, overwrite=True):
         from .query import DECaLSQuery
         g = self.clean_name(target)
 
         coord = self.get_coord(target)
-        query = DECaLSQuery(output_dir=str(self.download_dir), layer=self.layer)
+        query = DECaLSQuery(output_dir=str(self.download_dir), layer=self.layer, overwrite=overwrite)
 
         print(f"⬇ Downloading {g}")
         query.query_region(coord, size=size, download_type='all', galid=g)
@@ -88,7 +88,7 @@ class DecalsPipeline:
 
         with fits.open(fits_file) as hdul:
             img = hdul[0].data
-            if img.ndim != 3 or img.shape[0] != 3:
+            if img is None or img.ndim != 3 or img.shape[0] != 3:
                 raise ValueError("Expected a primary image cube shaped (3, ny, nx), ordered g/r/z")
             images = [img[i].copy() for i in range(3)]
             wcs = WCS(hdul[0].header).celestial
@@ -113,49 +113,56 @@ class DecalsPipeline:
         g = self.clean_name(target)
         bands = ['g','r','z']
 
-        images, invvars, sigmas, psfs, wcs = self.load_data(target)
-
-        fig = plt.figure(figsize=(12,16))
-
-        for row in range(4):
-            for col in range(3):
-                ax = plt.subplot(4,3,row*3+col+1,
-                                 projection=wcs if row < 3 else None)
-
-                if row == 0:
-                    data = images[col]
-                    vmin,vmax = np.percentile(data[np.isfinite(data)],[21,97])
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
-                    ax.set_title(f"{bands[col]} image")
-
-                elif row == 1:
-                    data = invvars[col]
-                    vmin,vmax = np.percentile(data[np.isfinite(data)],[1,99])
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
-                    ax.set_title(f"{bands[col]} invvar")
-
-                elif row == 2:
-                    data = sigmas[col]
-                    vmin,vmax = np.percentile(data[np.isfinite(data)],[1,99])
-                    ax.imshow(data, vmin=vmin, vmax=vmax)
-                    ax.set_title(f"{bands[col]} sigma")
-
-                else:
-                    ax.imshow(psfs[col])
-                    ax.set_title(f"{bands[col]} PSF")
-                    ax.axis("off")
-                    continue
-
-                ax.coords.grid(color='white', ls='dotted', alpha=0.5)
-                ax.set_xlabel("RA")
-                ax.set_ylabel("Dec")
-
-        out = self.plot_dir / f"{g}.png"
-        plt.tight_layout()
-        plt.savefig(out, dpi=200)
-        plt.close()
-
-        print(f"✔ Saved plot {out}")
+        with fits.open(self.download_dir / "fits" / f"{g}.fits") as hdul:
+            cube = hdul[0].data
+            if cube is None or cube.ndim != 3 or cube.shape[0] != 3:
+                raise ValueError("Expected g/r/z science cube")
+            images = [a.copy() for a in cube]
+            wcs = WCS(hdul[0].header).celestial
+        with fits.open(self.download_dir / "invvar" / f"{g}_invvar.fits") as hdul:
+            if len(hdul) != 7:
+                raise ValueError("Diagnostic requires a single native brick with seven HDUs")
+            invvars = []
+            invwcs = []
+            for band, i in zip(bands, (2, 4, 6)):
+                h = hdul[i]
+                label = str(h.header.get("BAND", h.header.get("FILTER", band))).strip().lower()
+                if label != band or h.data is None or h.data.ndim != 2:
+                    raise ValueError("Unexpected inverse-variance band or layout")
+                invvars.append(h.data.copy())
+                invwcs.append(WCS(h.header).celestial)
+        sigmas = []
+        for inv in invvars:
+            sigma = np.full(inv.shape, np.nan)
+            good = np.isfinite(inv) & (inv > 0)
+            sigma[good] = 1 / np.sqrt(inv[good])
+            sigmas.append(sigma)
+        psfs, _ = self._read_psfs(self.download_dir / "psf" / f"{g}_psf.fits")
+        fig = plt.figure(figsize=(12, 16))
+        try:
+            for row, (label, arrays) in enumerate(zip(
+                    ("image", "invvar", "sigma", "PSF"),
+                    (images, invvars, sigmas, psfs))):
+                for col, data in enumerate(arrays):
+                    projection = wcs if row == 0 else invwcs[col] if row < 3 else None
+                    ax = fig.add_subplot(4, 3, row * 3 + col + 1, projection=projection)
+                    finite = data[np.isfinite(data)]
+                    limits = np.percentile(finite, (21, 97) if row == 0 else (1, 99)) if finite.size else (0, 1)
+                    ax.imshow(data, origin="lower", cmap="viridis", vmin=limits[0], vmax=limits[1])
+                    ax.set_title(f"{bands[col]} {label}")
+                    if row == 3:
+                        ax.axis("off")
+                    else:
+                        ax.coords.grid(color="white", ls="dotted", alpha=0.5)
+                        ax.set_xlabel("RA")
+                        ax.set_ylabel("Dec")
+            fig.tight_layout()
+            out = self.plot_dir / f"{g}.png"
+            fig.savefig(out, dpi=200)
+        finally:
+            plt.close(fig)
+        print(f"Saved plot: {out}")
+        return out
 
     # ---------- PSF SPLIT ----------
     def split_psf(self, target):
@@ -192,8 +199,10 @@ class DecalsPipeline:
         result.add_history('Split from original DECaLS product without resampling.')
         return result
 
-    def save_split_data(self, target):
-        self._check_image_invvar(target)
+    def save_split_data(self, target, include_invvar=True):
+        """Split science independently; inverse variance requires verified matching grids."""
+        if include_invvar:
+            self._check_image_invvar(target)
         g = self.clean_name(target)
         bands = ["g","r","z"]
     
@@ -210,7 +219,7 @@ class DecalsPipeline:
         with fits.open(fits_file) as hdul:
             img = hdul[0].data
             header = hdul[0].header
-            if img.ndim != 3 or img.shape[0] != 3:
+            if img is None or img.ndim != 3 or img.shape[0] != 3:
                 raise ValueError("Expected image cube (3, ny, nx) in g/r/z order")
     
             for i, band in enumerate(bands):
@@ -221,6 +230,10 @@ class DecalsPipeline:
                 out = out_img / f"{g}_{band}.fits"
                 fits.writeto(out, data, header=h, overwrite=True)
     
+        if not include_invvar:
+            print(f"Saved split science images for {g}; inverse variance not processed. Existing inverse-variance outputs, if any, are unchanged and not validated by this run.")
+            return
+
         # ---------- INVVAR ----------
         with fits.open(invvar_file) as hdul:
             invs = [hdul[2].data, hdul[4].data, hdul[6].data]
@@ -243,7 +256,7 @@ class DecalsPipeline:
             force_download=False,
             do_plot=True,
             do_psf_split=True,
-            do_save_split=True):
+            do_save_split=True, include_invvar=False):
 
         if isinstance(targets, str):
             targets = [targets]
@@ -257,14 +270,15 @@ class DecalsPipeline:
                 self.download(t, size=size)
 
             elif skip_download and self.already_downloaded(t):
-                print(f"⏭ Skipping download for {t}")
+                self.download(t, size=size, overwrite=False)
 
             else:
-                self.download(t, size=size)
+                self.download(t, size=size, overwrite=not skip_download)
 
             if do_plot:
                 self.plot(t)
             if do_save_split:
-                self.save_split_data(t)
+                self.save_split_data(t, include_invvar=include_invvar)
             if do_psf_split:
                 self.split_psf(t)
+

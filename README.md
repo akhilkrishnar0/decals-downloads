@@ -29,6 +29,6 @@ Coordinates are supplied by the user. If omitted, SIMBAD is queried; on failure,
 Set `do_plot=True` for the 12-panel diagnostic. Outputs are saved in `decals_data/`.
 
 Native inverse-variance maps use the original HDU 2/4/6 selection and may have a different WCS and footprint from the science images. Verify HDU band and brick identity before scientific use; these are not aligned uncertainty maps.
-## Example output — NGC6902
+## Example output — UGC9024
 
 ![UGC9024 DECaLS diagnostic plot](UGC9024(1).png)
